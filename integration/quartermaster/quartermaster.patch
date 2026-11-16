@@ -1,0 +1,715 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 089278e..bc3c22d 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -26,6 +26,7 @@ Security. Each of these is tested; keep it true:
+ - Only a browser the program opened gets the session token: the program opens a one-time launch address, the page keeps the token in its own storage (never a cookie, which every localhost port would receive), and the token never goes in an address (only the `X-QM-Token` header opens the API: a link, picture, frame or player gets a ticket for its one address, GET only, for 10 minutes, `tickets.go`); a tab sends it only after the copy at its address proves it holds it (`tabProof`). The token changes at every start except a takeover from a copy that proved itself with the folder's instance secret, which never leaves the folder, or the restart a copy does itself after moving the data or into an update (a one-time nonce in this computer's `.app`, `takeRestart`). A copy holds its port on both loopbacks, a start sends the token only to a proven copy, and on one computer one data folder never has two copies running, nor one OneDrive data folder, whatever their home folders (`lockShared`). Across computers sharing data kept in OneDrive, only the copy holding the lease runs scheduled recipes and other background work (`bgOK`, lease.go; a recipe's scheduled run happens once: its slot goes into the lease before it starts, `claimRun`), a stale lease is taken only once this computer's OneDrive is evidently current (`mayTakeStale`), and changes merge: the more recent version of a file changed in two places wins, keeping what the other had already done (a run, a send, a post, a fired reminder, a placeholder: `doneMarks`), and the other is kept in `.conflicts` for 30 days (merge.go).
+ - Quartermaster runs no macro itself: Office files it writes carry none (`opcPkg.bytes`, `plainExt`), and where its own automation drives Word, PowerPoint or Excel (the preview's Pages and slide pictures, fresh numbers), it opens a file only with macros forced off, or not at all. Open in its app hands an Office file to Windows the way a double-click in File Explorer does, with nothing set for Office, and Office's own settings decide what runs (`mayOpen`). Every tool call, model request and send leaves a line in the chained audit trail, and a new tool needs its line in `toolnotes.go` and a set in `toolsets.go`.
+ - Programs and scripts never run: nothing runs a program or script Quartermaster was given or found. Those get Show in folder only, and their text is read as data. A file opens in its own app (Open in its app, Open in browser, Open in Acrobat) only when `mayOpen` (filekinds.go) allows it, and it never allows a program or script by its name or its first bytes (`runnableFile`), or a file whose bytes don't match its name (`matchesName`). Office files open that way like any other file: Word, Excel and PowerPoint files, macro-enabled ones, templates and CSV included, and the files `officeByContent` and `carriesMacros` find. Each try leaves a line in the audit trail. Word lays out the preview's Pages only with macros forced off and never for a document that links to a template or object elsewhere (`hasExternalLinks`). The preview, and a PDF a link opens in the browser, show PDFs only from a copy with their scripts, actions, XFA, embedded files and rich media removed (`cleanPDF`), and pictures, SVG included, only through an `<img>` under a sandbox. A ZIP file's items are extracted only into Uploads, never outside the zip's folder there and never over a file (`extractZip`), with zip bombs, links, encrypted items and programs (by name or by their bytes) refused. The SI's `extract_zip_item` first uses a copy already extracted where it may read (the same size and CRC-32: `extractedCopy`, zipgate.go), and extracts the rest only after the user's Extract on the zip card, unless Settings → Behavior → Extract files from zip files says Always or Never.
++- The browser (`browsertools.go`, the gohelm module) is on only under Superuser or where the deployment file turns on the `browser` feature. It opens only the sites the deployment file's `browser` lists name (`allow`, `read_only`, `block`); under Superuser, others ask first on a card. This computer's own addresses, private addresses and anything but https (unless listed) never open. Its window is WebView2 with a profile of its own in this computer's local folder, driven only through WebView2's own DevTools API (no debugging port), with Windows sign-in, password saving, autofill, downloads, uploads, permission prompts and new windows off. A click or key that sends, submits, buys, deletes, signs or agrees, and anything a page tries to send (any request but GET) right after an action the user didn't approve, waits for the user's click on the browser card; an answer is used once. Passwords, PINs, codes and ID numbers are never typed (`browser_hand_over`). A CAC sign-in is the page's own site asking: WebView2 shows its own certificate picker and Windows its own PIN prompt. Everything the browser reads is outside content. Under Superuser the Full profile adds an outside Edge or Chrome with its own profile over a pipe, and the programs `browser.desktop.apps` lists through UI Automation, never Quartermaster's own windows or Windows Security, UAC, credential or smart card prompts.
+ - Earlier chats are searched only when the user's own message asks about one (`search_past_chats` refuses otherwise, `reChatAsk`, chatsearch.go), never to answer anything else or as the user's material, from an index kept in memory only and never written anywhere; chats imported with someone else's project are left out (`Chat.Imported`).
+ - Someone else's calendar is read in full only when it's clear who the user means (`settleCalendarPerson`, personsettle.go): one directory match, their address or first and last name in the user's own words, the one of several namesakes the user's mail points to, or the user leaving it to the assistant; otherwise the tool lists who it could be and the model asks. A spoken rank orders matches and never rules one out, and finding a time to meet shows only when people are busy.
+ - DoD ID numbers are never shown; signers appear as `LAST, FIRST MI`. Quartermaster never fills a signature field; the one exception is the user signing one themselves in the form view, on Windows unless the deployment file turns it off (`"form_signing": false`, `canSignHere`), with a certificate from Windows' store after Windows asks for the PIN and nothing fetched (`formsign.go`). Open in Acrobat is always offered beside it, and the review card keeps Sign in Acrobat. The signature's appearance may carry a name the page draws and an emblem or picture from Emblems, but the name in its text and in the signature (the memo name) is always the certificate's as `LAST, FIRST MI` (`lookText`, formlook.go), never typed and never the DoD ID; Quartermaster draws and ships no service emblem. Don't ask again skips the two dialogs, never the user's Sign or Windows' PIN prompt, and the audit line names the look's kind, never its picture. Originals stay untouched: filled forms are new files, and the form view saves a new copy where Saved files puts filled forms or updates a form Quartermaster filled in that chat (`formViewWrite`).
+@@ -35,7 +36,7 @@ Security. Each of these is tested; keep it true:
+ - The marking banner comes from deployment configuration (the deployment file, then a unit key file, then the IL5 line) and is read-only in the interface. The one exception only lowers it: while a model endpoint the user added under Superuser is in use, the banner shows the lower of the deployment's level and the endpoint's, in that level's color (`banner`, endpoints.go). An endpoint's level never raises the banner, and the interface can't set one above the deployment's. Themes change the accent and light or dark only, and load nothing from outside.
+ - Secrets live in the Secrets store (DPAPI on Windows) or inside a password-protected unit key file, and stay on the computer: with the data in OneDrive, the Secrets, the session and instance files, the search index and the models never go there (`localAppNames`). The one exception is the copy for the user's other computers (`carry.go`): the Secrets without Superuser, sealed with AES-GCM under a key wrapped with the RSA encryption certificate whose private key is on the user's card (a provider other than Microsoft's software and TPM ones, `onCard`), opened only on the user's click with Windows asking for the PIN (`useCarried`), naming its certificates by fingerprint and issuer only, never the holder, and removed when the user turns it off. Backups include them only with a password. Notifications name a recipe, never what an answer says.
+ - The personal build (`-tags personal`, `docs/personal.md`) talks only to the model servers the user added and Microsoft 365, never to GenAI.mil, e-Publishing or the forms catalog's sites; every other rule here holds for it.
+-- At run time the program talks only to GenAI.mil, Microsoft 365, e-Publishing, the official https `.mil` and `.gov` sites the forms catalog links (to download a blank the user asked to fill, nothing else), services an administrator named in the deployment file (Windows' own downloader, `fetchViaWindows`, only for an address already on these lists, never after a refused redirect, and following no redirect; Use link on a guidance document takes only these hosts, `linkHostOK`), and, under Superuser, model endpoints the user added and a custom Microsoft 365 sign-in, Graph and device sign-in address (`cloudOf`, graph.go). Superuser turns on only in a development build, whose `appVersion` isn't the core's `version` (`superuserBuild`, endpoints.go; a release from `main` has no way in), only with the developer password, checked against the hash embedded from devunlock.json (devunlock.go) and never logged, and only on that computer: it's kept in the Secrets, never in config.json, so settings, a backup or another computer can't turn it on (`fromSecrets`, endpoints.go). Its endpoints and custom addresses are used only while it's on, a deployment file can forbid them (`"superuser": false` or `"custom_endpoints": false`; a custom Microsoft 365 connection then falls back to DoD 365), an endpoint is https (http only on localhost or 127.0.0.1) and the custom Microsoft 365 addresses https only, and an endpoint's key goes only to the host it was entered for, never through a redirect, and is dropped when the endpoint's address changes (`endpointKeysFit`). Fonts, scripts and images are embedded. No form PDFs are kept in this repository: the catalog holds links and fingerprints.
++- At run time the program talks only to GenAI.mil, Microsoft 365, e-Publishing, the official https `.mil` and `.gov` sites the forms catalog links (to download a blank the user asked to fill, nothing else), services an administrator named in the deployment file (Windows' own downloader, `fetchViaWindows`, only for an address already on these lists, never after a refused redirect, and following no redirect; Use link on a guidance document takes only these hosts, `linkHostOK`), and, under Superuser, model endpoints the user added and a custom Microsoft 365 sign-in, Graph and device sign-in address (`cloudOf`, graph.go). The browser window (above) is the user's own browsing on the sites the deployment file lists, or under Superuser the sites they allow. Superuser turns on only in a development build, whose `appVersion` isn't the core's `version` (`superuserBuild`, endpoints.go; a release from `main` has no way in), only with the developer password, checked against the hash embedded from devunlock.json (devunlock.go) and never logged, and only on that computer: it's kept in the Secrets, never in config.json, so settings, a backup or another computer can't turn it on (`fromSecrets`, endpoints.go). Its endpoints and custom addresses are used only while it's on, a deployment file can forbid them (`"superuser": false` or `"custom_endpoints": false`; a custom Microsoft 365 connection then falls back to DoD 365), an endpoint is https (http only on localhost or 127.0.0.1) and the custom Microsoft 365 addresses https only, and an endpoint's key goes only to the host it was entered for, never through a redirect, and is dropped when the endpoint's address changes (`endpointKeysFit`). Fonts, scripts and images are embedded. No form PDFs are kept in this repository: the catalog holds links and fingerprints.
+ 
+ Writing, for interface text, recipes, prompts and docs alike: plain sentences that say what happens; American spelling; dates as `16 Oct 26` and times as `19:41` (24-hour); buttons named for what they do. Say Super Intelligence (SI) and Department of War (DoW); `terms.json` lists these and the names kept as published (GenAI.mil, DoD ID, DoD 365), `TestTerms` fails on a retired word, and `go run ./tools/terms OLD NEW` switches one everywhere when guidance changes. Status words: ▲ caution, ■ danger, ● OK (Settings, and Connections → Microsoft 365 and GenAI.mil), ○ off. The writing rules in `docs/design/DESIGN.md` (Copy and formats) govern the interface.
+ 
+diff --git a/access.go b/access.go
+index c46494c..e01d179 100644
+--- a/access.go
++++ b/access.go
+@@ -2,6 +2,7 @@ package main
+ 
+ import (
+ 	"fmt"
++	"github.com/xattribution/gohelm/policy"
+ 	"path/filepath"
+ 	"strings"
+ 	"sync"
+@@ -40,6 +41,10 @@ type folderGate struct {
+ 	// show only where place cards do (placeNoCard).
+ 	zip     *zipReq
+ 	zipSaid map[string]string
++	// Browser questions (browsertools.go): the one asked this round, and
++	// the user's answers by the question's key, each used once.
++	browser     *policy.Ask
++	browserSaid map[string]string
+ }
+ 
+ // newFolderGate is a turn's gate for its chat, for a request from the
+diff --git a/agent.go b/agent.go
+index c4c19de..79c2924 100644
+--- a/agent.go
++++ b/agent.go
+@@ -1675,6 +1675,7 @@ func (app *App) RunTurn(ctx context.Context, c *Chat, lr *liveRun) {
+ 		pend := run.takePending()
+ 		place, placeNote := run.takePlaceAsk() // a Teams or SharePoint place that's off (placegate.go)
+ 		zipq := run.takeZipAsk()               // a zip extract_zip_item wants to extract from (zipgate.go)
++		brq := run.takeBrowserAsk()            // a question from the browser tools (browsertools.go)
+ 		var redo []map[string]any
+ 		for i, tc := range calls {
+ 			id, _ := tc["id"].(string)
+@@ -1691,6 +1692,10 @@ func (app *App) RunTurn(ctx context.Context, c *Chat, lr *liveRun) {
+ 				redo = append(redo, tc) // runs again once the user answers the zip's card
+ 				continue
+ 			}
++			if len(pend) == 0 && place == nil && zipq == nil && brq != nil && strings.Contains(outs[i], browserMarker) {
++				redo = append(redo, tc) // runs again once the user answers the browser's card
++				continue
++			}
+ 			msgs = append(msgs, Msg{"role": "tool", "tool_call_id": id, "name": name, "content": gateLater(outs[i])})
+ 		}
+ 		if len(redo) > 0 {
+@@ -1706,8 +1711,10 @@ func (app *App) RunTurn(ctx context.Context, c *Chat, lr *liveRun) {
+ 				ask, why = approvalAsk(pend, redo), "to allow reading "+filepath.Base(pend[0])
+ 			case place != nil:
+ 				ask, why = placeAsk(*place, placeNote, redo), "whether to search "+place.what(true)
+-			default:
++			case zipq != nil:
+ 				ask, why = zipAsk(*zipq, redo), "whether to extract files from "+zipq.Name
++			default:
++				ask, why = browserAsk(*brq, redo), brq.Title
+ 			}
+ 			app.saveResume(c.ID, msgs)
+ 			stepsMu.Lock()
+@@ -2165,7 +2172,10 @@ var outsideTools = map[string]string{
+ 	"delegate": "helpers' findings", "read_context_file": "memory file", "list_tasks": "tasks",
+ 	chatSearchName:  "earlier chats", // what earlier chats read is in them (chatsearch.go)
+ 	"read_zip_item": "zip file", "extract_zip_item": "zip file", "offer_open_file": "file properties",
+-	"app_info": appName + "'s records", // recipes can come from a coworker's file
++	"app_info":   appName + "'s records", // recipes can come from a coworker's file
++	"browser_go": "web page", "browser_snapshot": "web page", "browser_read": "web page", "browser_click": "web page", "browser_fill": "web page",
++	"browser_press": "web page", "browser_dialog": "web page", "browser_hand_over": "web page", "browser_tabs": "browser tabs",
++	"desktop_windows": "program windows", "desktop_snapshot": "program window", "desktop_act": "program window",
+ }
+ 
+ var reDataTag = regexp.MustCompile(`(?i)<(/?)\s*data\b`)
+diff --git a/ask.go b/ask.go
+index b96a022..96187b0 100644
+--- a/ask.go
++++ b/ask.go
+@@ -4,6 +4,7 @@ import (
+ 	"encoding/json"
+ 	"errors"
+ 	"fmt"
++	"github.com/xattribution/gohelm/policy"
+ 	"net/http"
+ 	"os"
+ 	"strings"
+@@ -46,10 +47,12 @@ type Ask struct {
+ 	// "places" = turning on a Teams or SharePoint place to search
+ 	// (placegate.go), with the place and one line saying why it asks.
+ 	// "zip" = extracting files from a zip (zipgate.go), with the zip.
+-	Kind    string           `json:"kind,omitempty"`
+-	Folders []string         `json:"folders,omitempty"`
+-	Places  []placeReq       `json:"places,omitempty"`
+-	Zip     *zipReq          `json:"zip,omitempty"`
++	Kind    string     `json:"kind,omitempty"`
++	Folders []string   `json:"folders,omitempty"`
++	Places  []placeReq `json:"places,omitempty"`
++	Zip     *zipReq    `json:"zip,omitempty"`
++	// "browser" = a question from the browser tools (browsertools.go).
++	Browser *policy.Ask      `json:"browser,omitempty"`
+ 	Note    string           `json:"note,omitempty"`
+ 	Pending []map[string]any `json:"pending,omitempty"`
+ }
+diff --git a/audit.go b/audit.go
+index a3b1092..f6be77b 100644
+--- a/audit.go
++++ b/audit.go
+@@ -291,7 +291,7 @@ func argsHash(raw string) string {
+ // outcomeOf names how a tool call ended, from its output.
+ func outcomeOf(ctx context.Context, out string) string {
+ 	switch {
+-	case strings.Contains(out, approvalMarker), strings.Contains(out, placeMarker), strings.Contains(out, zipMarker):
++	case strings.Contains(out, approvalMarker), strings.Contains(out, placeMarker), strings.Contains(out, zipMarker), strings.Contains(out, browserMarker):
+ 		return "approval"
+ 	case ctx.Err() != nil && strings.HasPrefix(out, "Error"):
+ 		return "stopped"
+diff --git a/banner.go b/banner.go
+index 0e17724..3fe27fa 100644
+--- a/banner.go
++++ b/banner.go
+@@ -2,6 +2,7 @@ package main
+ 
+ import (
+ 	"encoding/json"
++	"github.com/xattribution/gohelm/policy"
+ 	"os"
+ 	"path/filepath"
+ 	"runtime"
+@@ -62,6 +63,11 @@ type deployConfig struct {
+ 	// FormSigning false turns off signing in the form view (canSignHere,
+ 	// formview.go); Open in Acrobat stays.
+ 	FormSigning *bool `json:"form_signing,omitempty"`
++	// Browser are the sites the SI may use in the browser window, and
++	// which programs it may use under Superuser (browsertools.go): "allow",
++	// "read_only" and "block" lists of sites. Without it, the main build's
++	// browser opens nothing.
++	Browser *policy.Rules `json:"browser,omitempty"`
+ 	// TeamsSearch and SharePointSearch turn searching on by default
+ 	// (searchscope.go): "all" for every team and channel (and the Teams
+ 	// chats) or every site, or a list of teams, channels ("S36 Ops >
+diff --git a/browsertools.go b/browsertools.go
+new file mode 100644
+index 0000000..b93737f
+--- /dev/null
++++ b/browsertools.go
+@@ -0,0 +1,291 @@
++package main
++
++import (
++	"context"
++	"fmt"
++	"path/filepath"
++	"strings"
++	"sync"
++
++	"github.com/xattribution/gohelm"
++	"github.com/xattribution/gohelm/policy"
++)
++
++// The browser (beta, under Superuser): the SI uses web sites in a window of
++// Quartermaster's own, with the gohelm module. The window is Microsoft Edge
++// WebView2 with a profile of its own (in this computer's local folder,
++// never in OneDrive), driven only through WebView2's own DevTools API, so
++// no debugging port opens and Edge's remote-debugging policy doesn't apply.
++//
++// What the SI may do there:
++//   - Sites: only those the deployment file lists ("browser": {"allow",
++//     "read_only", "block"}); with Superuser on, others ask first on a card.
++//     This computer's own addresses, private addresses and anything but
++//     https never open.
++//   - Reading: snapshots and text, with text styled to be invisible and
++//     frames from other sites left out. Everything read is outside content
++//     (outsideTools): it reaches the model as data, and facts from it wait
++//     for the user's Keep.
++//   - Acting: clicks, fields and keys. Anything that sends, submits, buys,
++//     deletes, signs or agrees, and anything a page tries to send after an
++//     action, stops at a card the user answers ("browser" Ask). Passwords,
++//     PINs, codes and ID numbers are never typed; the SI hands those to the
++//     user (browser_hand_over).
++//   - A CAC sign-in: when the page's own site asks for the user's
++//     certificate, WebView2 shows its own picker and Windows its own PIN
++//     prompt. Quartermaster never chooses a certificate and never sees the
++//     PIN.
++//   - Downloads, uploads, permission prompts and pop-up windows are refused
++//     (pop-ups open in the same window after the same checks).
++//
++// With Superuser on, the Full profile adds an outside Edge or Chrome with
++// its own profile and other programs on this computer through UI
++// Automation (Settings lists which programs; none by default).
++
++const browserMarker = "[needs browser OK]"
++
++// browserOn says the browser tools may be offered: under Superuser (the
++// Full profile), or where the deployment file turns on the "browser"
++// feature (the pane only, on the sites it lists).
++func (app *App) browserOn() bool {
++	return superuserOn(app.store.Config()) && app.betaAllowed() || app.feature("browser")
++}
++
++var (
++	browserMu   sync.Mutex
++	browserSess *gohelm.Session
++	browserFull bool
++)
++
++// browserRules are the site rules: the deployment file's, and under
++// Superuser asking about sites on no list.
++func (app *App) browserRules(full bool) policy.Rules {
++	_, d := readDeploy()
++	var r policy.Rules
++	if d.Browser != nil {
++		r = *d.Browser
++	}
++	if full && d.Browser == nil {
++		r.AskOutside = true
++	}
++	if !full {
++		r.Desktop = policy.DesktopRules{} // other programs are Full only
++	}
++	return r
++}
++
++// browserSession is the browser state the tools share, made on first use
++// and made again when Superuser changes the profile.
++func (app *App) browserSession() (*gohelm.Session, error) {
++	full := superuserOn(app.store.Config())
++	browserMu.Lock()
++	defer browserMu.Unlock()
++	if browserSess != nil && browserFull == full {
++		*browserSess.Rules() = app.browserRules(full)
++		return browserSess, nil
++	}
++	if browserSess != nil {
++		browserSess.Close()
++		browserSess = nil
++	}
++	prof := gohelm.Pane
++	if full {
++		prof = gohelm.Full
++	}
++	s, err := gohelm.New(gohelm.Config{
++		Profile:       prof,
++		Rules:         app.browserRules(full),
++		PaneDir:       filepath.Join(app.store.paths.Local, "browser"),
++		PaneTitle:     appName + " browser",
++		PaneOwner:     appWindowHandle(),
++		BrowserDir:    filepath.Join(app.store.paths.Local, "browser-outside"),
++		AgentName:     appName,
++		WorkingStatus: appName + " is working",
++	})
++	if err != nil {
++		return nil, err
++	}
++	browserSess, browserFull = s, full
++	return s, nil
++}
++
++// browserTools are gohelm's tools as Quartermaster's. The list is the Full
++// profile's; what a chat is offered follows the profile in force.
++func browserTools() []toolDef {
++	s, _ := gohelm.New(gohelm.Config{Profile: gohelm.Full})
++	var out []toolDef
++	for _, t := range s.Tools() {
++		name := t.Name
++		out = append(out, toolDef{
++			name: name, label: t.Label, desc: t.Description, params: t.Params, required: t.Required,
++			needs: "browser", readOnly: t.ReadOnly,
++			fn: func(r *Run, a args) (toolResult, error) { return r.runBrowserTool(name, a) },
++		})
++	}
++	return out
++}
++
++// browserFullOnly are the tools only the Full profile has.
++var browserFullOnly = map[string]bool{"browser_tabs": true, "desktop_windows": true, "desktop_snapshot": true, "desktop_act": true}
++
++func (r *Run) runBrowserTool(name string, a args) (toolResult, error) {
++	app := r.app
++	if !app.browserOn() {
++		return toolResult{}, fmt.Errorf("the browser is off: it's a beta under Superuser, or a feature the deployment file turns on")
++	}
++	s, err := app.browserSession()
++	if err != nil {
++		return toolResult{}, err
++	}
++	var tool *gohelm.Tool
++	for _, t := range s.Tools() {
++		if t.Name == name {
++			t := t
++			tool = &t
++		}
++	}
++	if tool == nil {
++		return toolResult{}, fmt.Errorf("%s isn't available in this build", name)
++	}
++	lead := r
++	for lead.parent != nil {
++		lead = lead.parent
++	}
++	env := policy.Env{
++		Gate:  qmBrowserGate{r},
++		Owner: lead.chatID,
++		Audit: policy.AuditFunc(func(e policy.Event) {
++			out := e.Outcome
++			if e.Phase == "intent" {
++				out = "intent"
++			}
++			app.audit.write(auditRec{Ev: "browser", Chat: lead.chatID, Helper: r.parent != nil, Tool: e.Tool,
++				Effect: strings.TrimSpace(e.Action + " " + e.Class), Kind: e.Origin, Out: out})
++		}),
++	}
++	res, err := tool.Run(r.ctx, env, gohelm.Args(a))
++	if err != nil {
++		return toolResult{}, err
++	}
++	text := res.Text
++	if res.Pending != nil {
++		text = browserMarker + " " + text
++	}
++	return toolResult{text: text, summary: res.Summary}, nil
++}
++
++// qmBrowserGate asks the way a zip card does (zipgate.go): the question
++// stops the turn at a card, the call runs again after the click, and an
++// answer is used once. Recipe runs, scheduled runs, Chat from Teams and
++// helpers can't ask.
++type qmBrowserGate struct{ r *Run }
++
++func (g qmBrowserGate) Decide(_ context.Context, a policy.Ask) (policy.Answer, error) {
++	r := g.r
++	lead := r
++	for lead.parent != nil {
++		lead = lead.parent
++	}
++	fg := lead.gate
++	if fg == nil || fg.placeNoCard || r.parent != nil {
++		return policy.CannotAsk, nil
++	}
++	fg.mu.Lock()
++	defer fg.mu.Unlock()
++	if said, ok := fg.browserSaid[a.Key]; ok {
++		delete(fg.browserSaid, a.Key) // one answer, one use
++		switch said {
++		case "allow":
++			return policy.Allow, nil
++		case "allow_site":
++			return policy.AllowSite, nil
++		case "done":
++			return policy.Done, nil
++		}
++		return policy.Deny, nil
++	}
++	if fg.browser == nil {
++		a := a
++		fg.browser = &a
++	}
++	return policy.Pending, nil
++}
++
++// takeBrowserAsk is the question a browser tool asked this round, if any.
++func (r *Run) takeBrowserAsk() *policy.Ask {
++	if r.gate == nil {
++		return nil
++	}
++	r.gate.mu.Lock()
++	defer r.gate.mu.Unlock()
++	a := r.gate.browser
++	r.gate.browser = nil
++	return a
++}
++
++// The card's buttons, by the option gohelm gave.
++var browserOptLabels = map[policy.Option]string{
++	policy.OptAllow:     "Allow",
++	policy.OptAllowSite: "Allow for this site",
++	policy.OptDeny:      "Don't allow",
++	policy.OptDone:      "I'm done",
++}
++
++// browserAsk is the card, with the calls to run once it's answered.
++func browserAsk(a policy.Ask, calls []map[string]any) *Ask {
++	var opts []string
++	for _, o := range a.Options {
++		if l := browserOptLabels[o]; l != "" {
++			opts = append(opts, l)
++		}
++	}
++	text := a.Title
++	if len(a.Detail) > 0 {
++		text += "\n" + strings.Join(a.Detail, "\n")
++	}
++	return &Ask{Kind: "browser", Browser: &a, Pending: calls,
++		Questions: []Question{{ID: "q1", Text: text, Kind: "choice", Options: opts}}}
++}
++
++// browserChoice reads the card's answer: one of gohelm's options, or
++// "notnow" for anything but one of its buttons.
++func browserChoice(ask *Ask, clicked bool) string {
++	if !clicked || ask == nil || ask.Browser == nil || len(ask.Answers) != 1 {
++		return "notnow"
++	}
++	for o, l := range browserOptLabels {
++		if ask.Answers[0] == l {
++			for _, have := range ask.Browser.Options {
++				if have == o {
++					return string(o)
++				}
++			}
++		}
++	}
++	return "notnow"
++}
++
++// resumeBrowser applies the answer to a browser card and runs the calls
++// that waited for it.
++func (app *App) resumeBrowser(ctx context.Context, c *Chat, run *Run, toolMap map[string]toolDef, ask *Ask, clicked bool, msgs []Msg, steps *[]Step, stepsMu *sync.Mutex, lr *liveRun) []Msg {
++	act := browserChoice(ask, clicked)
++	if ask.Browser != nil {
++		run.gate.mu.Lock()
++		if run.gate.browserSaid == nil {
++			run.gate.browserSaid = map[string]string{}
++		}
++		run.gate.browserSaid[ask.Browser.Key] = act
++		run.gate.mu.Unlock()
++		app.audit.write(auditRec{Ev: "browser", Chat: c.ID, Kind: ask.Browser.Origin, Effect: string(ask.Browser.Kind) + " " + act, Out: "answer"})
++	}
++	outs := app.runTools(ctx, run, toolMap, ask.Pending, steps, stepsMu, lr)
++	run.takePlaceAsk()
++	run.takeZipAsk()
++	run.takeBrowserAsk() // another question one of them asked: asked when it's called again
++	for i, tc := range ask.Pending {
++		id, _ := tc["id"].(string)
++		name, _ := tc["function"].(map[string]any)["name"].(string)
++		msgs = append(msgs, Msg{"role": "tool", "tool_call_id": id, "name": name, "content": gateLater(outs[i])})
++	}
++	return msgs
++}
+diff --git a/browsertools_test.go b/browsertools_test.go
+new file mode 100644
+index 0000000..c167557
+--- /dev/null
++++ b/browsertools_test.go
+@@ -0,0 +1,117 @@
++package main
++
++import (
++	"context"
++	"strings"
++	"testing"
++
++	"github.com/xattribution/gohelm/policy"
++)
++
++func browserToolNames(app *App) map[string]bool {
++	_, m := app.toolsFor(nil)
++	out := map[string]bool{}
++	for n := range m {
++		if strings.HasPrefix(n, "browser_") || strings.HasPrefix(n, "desktop_") {
++			out[n] = true
++		}
++	}
++	return out
++}
++
++func TestBrowserToolsOnlyUnderSuperuser(t *testing.T) {
++	app := testApp(t)
++	if got := browserToolNames(app); len(got) != 0 {
++		t.Fatalf("browser tools offered with Superuser off: %v", got)
++	}
++	if _, err := newRun(app, t.Context(), nil).runBrowserTool("browser_snapshot", args{}); err == nil {
++		t.Error("a browser tool ran with Superuser off")
++	}
++	superuserForTest(app)
++	got := browserToolNames(app)
++	for _, n := range []string{"browser_go", "browser_snapshot", "browser_read", "browser_click", "browser_fill", "browser_press",
++		"browser_dialog", "browser_hand_over", "browser_tabs", "desktop_windows", "desktop_snapshot", "desktop_act"} {
++		if !got[n] {
++			t.Errorf("%s not offered under Superuser", n)
++		}
++	}
++}
++
++func TestBrowserToolsAreWiredIn(t *testing.T) {
++	inSet := map[string]bool{}
++	for _, s := range toolSets {
++		for _, n := range s.tools {
++			inSet[n] = true
++		}
++	}
++	for _, d := range browserTools() {
++		if _, ok := toolNotes[d.name]; !ok {
++			t.Errorf("%s has no line in toolNotes", d.name)
++		}
++		if !inSet[d.name] {
++			t.Errorf("%s is in no tool set", d.name)
++		}
++		if outsideTools[d.name] == "" {
++			t.Errorf("%s isn't fenced as outside content", d.name)
++		}
++		if d.readOnly && noteFor(d.name).effect == makes {
++			t.Errorf("%s is read-only but makes something", d.name)
++		}
++	}
++	for _, n := range []string{"browser_click", "browser_fill", "browser_press", "browser_dialog", "desktop_act"} {
++		if noteFor(n).effect != makes {
++			t.Errorf("%s isn't journaled as a change", n)
++		}
++	}
++}
++
++func TestBrowserGateAsksOnceAndCards(t *testing.T) {
++	app := testApp(t)
++	r := newRun(app, t.Context(), nil)
++	ask := policy.Ask{Kind: policy.KindCommit, Key: "commit:abc", Title: `Click button "Submit" on travel.example.mil?`,
++		Detail: []string{"Sends to: https://travel.example.mil/submit (POST)"}, Options: []policy.Option{policy.OptAllow, policy.OptAllowSite, policy.OptDeny}}
++	ctx := context.Background()
++	if a, _ := (qmBrowserGate{r}).Decide(ctx, ask); a != policy.CannotAsk {
++		t.Errorf("a run nobody is in asked: %v", a)
++	}
++	r.gate = &folderGate{}
++	if a, _ := (qmBrowserGate{r}).Decide(ctx, ask); a != policy.Pending {
++		t.Fatalf("no card: %v", a)
++	}
++	got := r.takeBrowserAsk()
++	if got == nil || got.Key != ask.Key {
++		t.Fatalf("the question wasn't kept for the card: %+v", got)
++	}
++	helper := newRun(app, t.Context(), nil)
++	helper.parent = r
++	if a, _ := (qmBrowserGate{helper}).Decide(ctx, ask); a != policy.CannotAsk {
++		t.Errorf("a helper asked: %v", a)
++	}
++	card := browserAsk(*got, nil)
++	if card.Kind != "browser" || len(card.Questions) != 1 || strings.Join(card.Questions[0].Options, "|") != "Allow|Allow for this site|Don't allow" ||
++		!strings.Contains(card.Questions[0].Text, "Sends to:") {
++		t.Errorf("card: %+v", card)
++	}
++	card.Answers = []string{"Allow for this site"}
++	if browserChoice(card, true) != "allow_site" {
++		t.Error("button not read")
++	}
++	if browserChoice(card, false) != "notnow" {
++		t.Error("a typed answer counted as a click")
++	}
++	card.Answers = []string{"I'm done"}
++	if browserChoice(card, true) != "notnow" {
++		t.Error("a button the card didn't have counted")
++	}
++	// The answer is used once.
++	r.gate.browserSaid = map[string]string{ask.Key: "allow"}
++	if a, _ := (qmBrowserGate{r}).Decide(ctx, ask); a != policy.Allow {
++		t.Errorf("answer not used: %v", a)
++	}
++	if a, _ := (qmBrowserGate{r}).Decide(ctx, ask); a != policy.Pending {
++		t.Errorf("answer used twice: %v", a)
++	}
++	if !strings.HasPrefix(gateLater(browserMarker+" waiting"), "Not done yet") {
++		t.Error("gateLater doesn't know the browser's marker")
++	}
++}
+diff --git a/docs/status.md b/docs/status.md
+index 6d355a7..bd48f6e 100644
+--- a/docs/status.md
++++ b/docs/status.md
+@@ -15,6 +15,8 @@ Asked for 30 Oct 26; not started. Take each out once it ships.
+ 
+ ## Known issues
+ 
++- **The browser beta needs checks at work** (`browsertools.go`, gohelm). gohelm's own Windows checks pass on a personal PC (the pane on public sites, a form post that waits for the card, a certificate request reaching the check, the desktop driver on a test window). Still to check on a work PC: that the pane opens under the Edge policies there; a CAC sign-in to a listed site (the picker and the PIN prompt); and that a site's sends after clicks don't ask too often (sites that read with POST, like GraphQL, ask after clicks until the user allows sends for the site). The card is the generic question card (`askCard`); a card of its own (title, what's sent, where to) would read better.
++
+ - **`TestStartAfterCrashedStarts` fails when the tests run on Windows.** It reads the message the program shows before its window from stderr, which a `-H windowsgui` build doesn't have there. The other start tests run on Windows from 2 Nov 26 (`dev`), now that the test program is built as `qm.exe`.
+ - **`TestStartMenu` fails when the tests run on Windows.** The shortcut it makes reads back as a relative path (`..\003\quartermaster-1.36.0-windows-amd64.exe`), so `shortcutTarget` or `saveShortcut` (shortcut_windows.go) may store or read the link's relative path instead of its full one. Found 2 Nov 26 on `dev`; `main` does the same. Check a real Start menu shortcut after moving the program file.
+ - **goxfa: nested signature fields.** A signed field inside a nested unnamed subform can show as an extra unsigned signature field, because `somComponent` names it differently.
+diff --git a/features.go b/features.go
+index 21dab2c..36d260c 100644
+--- a/features.go
++++ b/features.go
+@@ -39,6 +39,7 @@ var knownFeatures = []featureInfo{
+ 	{"transcription", "Transcribe meeting recordings on this computer"},
+ 	{"local-models", "Use models that run on this computer for routing and short jobs"},
+ 	{"aar-intake", "Collect feedback for after-action reports from a form or list"},
++	{"browser", "Use the web sites the deployment file lists in a browser window of " + appName + "'s own, with your OK before anything is sent"},
+ }
+ 
+ func knownFeature(name string) (featureInfo, bool) {
+diff --git a/go.mod b/go.mod
+index d5fae93..5ecaee9 100644
+--- a/go.mod
++++ b/go.mod
+@@ -23,6 +23,7 @@ require (
+ 	github.com/mattn/go-runewidth v0.0.30 // indirect
+ 	github.com/ncruces/go-strftime v1.0.0 // indirect
+ 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
++	github.com/xattribution/gohelm v0.1.0
+ 	github.com/xdg-go/stringprep v1.0.4 // indirect
+ 	go.yaml.in/yaml/v3 v3.0.5 // indirect
+ 	golang.org/x/crypto v0.57.0 // indirect
+diff --git a/placegate.go b/placegate.go
+index 7dde2f8..c3d4b20 100644
+--- a/placegate.go
++++ b/placegate.go
+@@ -265,6 +265,9 @@ func (app *App) resumeGate(ctx context.Context, c *Chat, run *Run, toolMap map[s
+ 	if ask.Kind == "zip" {
+ 		return app.resumeZip(ctx, c, run, toolMap, ask, clicked, msgs, steps, stepsMu, lr)
+ 	}
++	if ask.Kind == "browser" {
++		return app.resumeBrowser(ctx, c, run, toolMap, ask, clicked, msgs, steps, stepsMu, lr)
++	}
+ 	if ask.Kind != "places" {
+ 		n := len(msgs)
+ 		msgs = app.resumeApproval(ctx, c, run, toolMap, ask, approvalChoice(ask.Answers, clicked), msgs, steps, stepsMu, lr)
+diff --git a/toolnotes.go b/toolnotes.go
+index 1940197..d8888fa 100644
+--- a/toolnotes.go
++++ b/toolnotes.go
+@@ -56,6 +56,14 @@ var toolNotes = map[string]toolNote{
+ 	// click opens.
+ 	"extract_zip_item": {effect: makes, idempotent: true, openWorld: true},
+ 	"offer_open_file":  {effect: makes, idempotent: true, openWorld: true},
++	// The browser (browsertools.go): looking reads the web; acting on a
++	// page or a program can change something outside, and stops at the
++	// user's card before anything is sent.
++	"browser_go": readRemote, "browser_snapshot": readRemote, "browser_read": readRemote, "browser_tabs": readRemote,
++	"browser_click": {effect: makes, openWorld: true}, "browser_fill": {effect: makes, openWorld: true},
++	"browser_press": {effect: makes, openWorld: true}, "browser_dialog": {effect: makes, openWorld: true},
++	"browser_hand_over": {effect: inChat, openWorld: true},
++	"desktop_windows":   readLocal, "desktop_snapshot": readLocal, "desktop_act": makeNew,
+ 	// Inside the conversation.
+ 	"ask_user": {effect: inChat}, "draft_teams_message": {effect: inChat}, "hide_on_schedules": {effect: inChat, idempotent: true}, "update_sharepoint_list": {effect: inChat, openWorld: true}, "propose_recipe": {effect: inChat, idempotent: true}, "delegate": {effect: inChat, openWorld: true},
+ 	"finish_later": {effect: inChat}, // moves the request to Finish later; RunTurn acts on the call (later.go)
+diff --git a/tools.go b/tools.go
+index 7c2b0a9..ce77973 100644
+--- a/tools.go
++++ b/tools.go
+@@ -433,6 +433,10 @@ func parseGraphTime(s string) time.Time {
+ // ---------------- tool catalog ----------------
+ 
+ func (app *App) toolCatalog() []toolDef {
++	return append(app.baseCatalog(), browserTools()...) // the browser (browsertools.go)
++}
++
++func (app *App) baseCatalog() []toolDef {
+ 	return append([]toolDef{
+ 		askUserTool(),
+ 		{
+@@ -706,6 +710,10 @@ func (app *App) toolsFor(off map[string]bool) ([]any, map[string]toolDef) {
+ 			if !app.transcribeReady() {
+ 				continue
+ 			}
++		case "browser":
++			if !app.browserOn() || (browserFullOnly[t.name] && !superuserOn(app.store.Config())) {
++				continue
++			}
+ 		case "speak":
+ 			if !app.speakReady() {
+ 				continue
+diff --git a/toolsets.go b/toolsets.go
+index bd5bb51..1da8b75 100644
+--- a/toolsets.go
++++ b/toolsets.go
+@@ -216,6 +216,12 @@ var toolSets = []toolSet{
+ 	{"zip", "zip files",
+ 		[]string{"read_zip_item", "extract_zip_item"},
+ 		regexp.MustCompile(`(?i)\bzip|\barchive|\bextract|\bunzip`)},
++	{"browser", "use web sites in a browser window: open, read, click, fill in",
++		[]string{"browser_go", "browser_snapshot", "browser_read", "browser_click", "browser_fill", "browser_press", "browser_dialog", "browser_hand_over", "browser_tabs"},
++		regexp.MustCompile(`(?i)browser|web ?sites?|web ?pages?|portal|https?://|www\.|(sign|log) ?(in|on) to|(go|navigate) to (the )?\w+\.(mil|gov|com|org)|on the (site|website|portal)`)},
++	{"desktop", "use another program on this computer through its buttons and fields",
++		[]string{"desktop_windows", "desktop_snapshot", "desktop_act"},
++		regexp.MustCompile(`(?i)(in|on) (my |the )?(screen|desktop)|what'?s on my screen|click (the |on )?\w+ (in|on) (excel|word|outlook|the app)|other (program|app)s?`)},
+ 	{"audio", "transcribe, read aloud",
+ 		[]string{"transcribe_audio", "read_aloud"},
+ 		regexp.MustCompile(`(?i)\btranscri|\brecording|\baudio|\bvoice|\blisten|\baloud|\bspeak`)},
+diff --git a/webview_other.go b/webview_other.go
+index 7876831..ebf0624 100644
+--- a/webview_other.go
++++ b/webview_other.go
+@@ -8,3 +8,6 @@ func webviewAvailable() bool     { return false }
+ func windowSignedIn(string) bool { return false }
+ 
+ func osDark() bool { return false }
++
++// appWindowHandle is the app window, for windows that open in front of it.
++func appWindowHandle() uintptr { return 0 }
+diff --git a/zipgate.go b/zipgate.go
+index 95b626e..302a66e 100644
+--- a/zipgate.go
++++ b/zipgate.go
+@@ -156,6 +156,9 @@ func gateLater(out string) string {
+ 	if strings.Contains(out, zipMarker) {
+ 		return "Not extracted yet: call it again to ask the user about it."
+ 	}
++	if strings.Contains(out, browserMarker) {
++		return "Not done yet: call it again to ask the user about it."
++	}
+ 	return placeLater(out)
+ }
+ 

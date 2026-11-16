@@ -1,125 +1,127 @@
 # gohelm design
 
-gohelm gives an assistant a browser and, optionally, the Windows desktop, as a set of tools a model can call. It is pure Go with no helper programs, no Node, no Python and no DLLs, so it can live inside a program like Quartermaster and be covered by that program's own approval.
+gohelm gives an assistant a browser and, in its Full profile, other Windows programs, as tools a model can call. It is pure Go, so it can live inside a program like Quartermaster and be covered by that program's own approval.
 
-It has two profiles:
+## Profiles
 
-- **Pane.** A browser window the host program owns (Microsoft Edge WebView2), driven only through WebView2's own DevTools API. No debugging port is opened and nothing outside the program can attach to it. This is the profile for a locked-down work computer.
-- **Full.** Everything in Pane, plus an outside Edge or Chrome started by gohelm with its own profile, and control of other Windows apps through UI Automation, the mouse and the keyboard. This is for development builds and personal use.
+- **Pane.** A browser window the host owns (Microsoft Edge WebView2), driven only through WebView2's own DevTools API (`ICoreWebView2::CallDevToolsProtocolMethod`). No debugging port opens and nothing outside the program can attach to it. For a locked-down work computer, where the CIS benchmark (and likely the STIG) turns Edge's remote debugging off.
+- **Full.** Everything in Pane, plus an outside Edge or Chrome started by gohelm with its own profile over a pipe, and other Windows programs through UI Automation. For development builds and personal use.
 
 ## What it borrows, and from where
 
 | Idea | Source | How gohelm uses it |
 |---|---|---|
-| Accessibility snapshot with refs | Playwright MCP, Vercel agent-browser | The page is described as a short tree of roles and names, and every element the model can act on gets a ref such as `e12`. |
-| Interactive-only snapshot | agent-browser `snapshot -i` | The default snapshot lists only what can be clicked, typed or chosen, plus headings for context. |
-| Stable refs | (new) | A ref stays the same while its element exists, so the model can keep using it after small changes. Refs reset when the page navigates. |
-| Change lists after actions | (new, for token cost) | After a click or a typed value, the result lists what appeared or disappeared instead of the whole page again. |
-| Actionability checks | Playwright | Before a click: the element is visible, enabled, in view, and nothing covers it. If something covers it, the result names it (for example a cookie banner). |
-| Origin sets | Chrome agent security (Dec 2025) | The agent may only read and act on sites the policy or the user allowed. Frames from other sites are left out of what the model sees. |
-| User Alignment Critic | Chrome agent security | An optional second check, supplied by the host, sees only the user's task and the proposed action (never page text) and can veto it. |
-| Takeover mode, confirmations, watch mode | OpenAI Operator | Passwords, PINs and payment fields are never typed by the agent; it hands over to the user. Actions that send, submit, buy, delete or sign wait for the user's OK. |
-| Hidden-text defenses | Brave's Comet research | Text styled to be invisible (transparent, tiny, off-screen, same color as its background) is left out of snapshots and reading, and counted. |
-| Injection hints | Perplexity Comet's classifier layer | A cheap pattern check flags page text that talks to an AI assistant. The result says so. It's a hint, never a guarantee. |
-| Accessibility tree for desktop apps | Windows-MCP, UFO2 | Desktop apps are read through UI Automation. Actions use UI Automation patterns (Invoke, Toggle, Value, Select, Expand) first and the mouse only as a fallback. |
+| Accessibility snapshot with refs | Playwright MCP, Vercel agent-browser | The page is a short tree of roles and names. Every element the model can act on gets a ref such as `e12`. |
+| Interactive-only snapshot | agent-browser `snapshot -i` | The default snapshot lists only what can be clicked, typed or chosen, plus headings and dialogs. |
+| Clickable elements without roles | browser-use (`isClickable`) | Elements with click handlers and no role show as `clickable`, from DOMSnapshot's `isClickable`. |
+| Stable refs | (new) | A ref stays the same while its element exists, so it survives small changes. Refs reset when the page navigates. |
+| Change lists after actions | (new, for token cost) | After a click or fill, the result lists what appeared, changed or disappeared, instead of the whole page again. |
+| Actionability checks | Playwright | Before a click: visible, enabled, scrolled into view, and nothing covering it, tested at several points. A covering element is named with its ref. |
+| Origin sets | Chrome agent security (Dec 2025) | The agent only reads and acts on sites the policy or the user allowed. Frames from other sites are left out of what the model sees. |
+| User Alignment Critic | Chrome agent security | An optional host check of commit actions that sees the user's task and the action's role and short name, never page text. |
+| Takeover mode, confirmations | OpenAI Operator | Secrets are never typed: the agent hands over to the user. Actions that send or change things wait for the user's OK. |
+| Hidden-text defenses | Brave's research on Comet | Text styled to be invisible (opacity, transparent color, tiny font, clipped, off the page, never drawn) is left out and counted. |
+| Injection hints | Perplexity Comet's classifier layer | A cheap pattern check flags page text that gives instructions to an assistant. It's a hint, never a guarantee. |
+| Accessibility tree for desktop apps | Windows-MCP, UFO2 | Programs are read through UI Automation. Actions use its patterns first and the mouse only as an opt-in fallback. |
 
 ## Packages
 
 ```
-gohelm/            Session, tool profiles and tool definitions (the part a host wires up)
+gohelm/            Session, profiles and tool definitions (what a host wires up)
   cdp/             a small DevTools Protocol client over any Transport
-  cdp/wsconn       WebSocket transport (RFC 6455 client, no dependencies)
-  cdp/pipeconn     pipe transport (--remote-debugging-pipe), no port at all
-  browser/         the page driver: snapshot, refs, actions, reading, waiting, dialogs
-  policy/          site rules, consent, action classes, the Gate and Critic interfaces, audit
-  launch/          finds and starts Edge or Chrome with its own profile (Full only)
-  pane/            the WebView2 window and its DevTools transport (Windows only)
-  desktop/         UI Automation, screenshots and input (Windows only, Full only)
+  cdp/pipeconn     the pipe transport (--remote-debugging-pipe): no port
+  browser/         the page driver: snapshot, refs, actions, reading, settling, dialogs, request checks
+  policy/          site rules, action classes, the Gate, Critic, Consent and Auditor interfaces
+  launch/          finds and starts Edge or Chrome with its own profile (Full)
+  pane/            the WebView2 window and its DevTools transport (Windows)
+  desktop/         UI Automation, screenshots and opt-in input (Windows, Full)
+  internal/        the hostile test site and the Windows checks
 ```
 
-Each package builds on every platform. Windows-only parts return `ErrUnsupported` elsewhere, so the host's cross-platform build and tests stay simple.
+Every package builds on every platform. Windows-only parts return `ErrUnsupported` elsewhere.
 
 ## The transport seam
 
-Everything above `cdp` talks to a `cdp.Transport`:
+Everything above `cdp` talks to a `cdp.Transport` (Call, Subscribe, Close).
 
-```go
-type Transport interface {
-    Call(ctx context.Context, method string, params any) (json.RawMessage, error)
-    Subscribe(event string, fn func(json.RawMessage)) (cancel func())
-    Close() error
-}
-```
+- **Pane:** `Call` posts to the window's thread and calls `CallDevToolsProtocolMethod`. `Subscribe` registers a `DevToolsProtocolEventReceiver` for that event name. Completion handlers are Go COM objects with one shared function table, so the number of syscall callbacks stays fixed, and they're freed when WebView2 releases them. Nothing waits on the window's thread.
+- **Pipe:** a JSON message connection to a browser gohelm started. A tab is attached with `Target.attachToTarget` (flatten), and its Transport stamps the session ID on each message. On Windows the pipes are passed as two inherited handles named by `--remote-debugging-io-pipes`, and inheritance is limited to those two.
 
-- **Pane:** `Call` posts to the window's thread and uses `ICoreWebView2::CallDevToolsProtocolMethod`. `Subscribe` registers a `DevToolsProtocolEventReceiver` for that one event name.
-- **WebSocket and pipe:** a JSON message connection to a browser. A page session is attached with `Target.attachToTarget` (flatten), and its `Transport` stamps the session ID on every message.
+So the driver, snapshots, policy and tools are the same code for the pane and the outside browser, and they're tested against a real headless Chrome or Edge.
 
-So the driver, snapshot, policy and tools are the same code for the pane and the outside browser, and they are tested against a real headless Chrome in CI.
+## Snapshots
 
-## Snapshots and refs
-
-1. `Accessibility.getFullAXTree` gives the tree with each node's DOM `backendDOMNodeId`.
-2. `DOMSnapshot.captureSnapshot` with a few computed styles (opacity, color, background color, font size, visibility) and layout boxes gives what each node looks like, in one call.
-3. Text nodes that are invisible to a person are dropped (opacity 0 along the ancestor chain, alpha 0 color, font under 6 px, zero area, entirely off the page, or contrast against the nearest background under 1.2:1). The snapshot ends with how many were left out.
-4. Frames from sites outside the allowed set are left out and named only by their site.
-5. Nodes render one per line, Playwright style: `- button "Send" [ref=e7] [disabled]`. States shown: checked, selected, expanded, disabled, required, value of text boxes (masked for password fields), heading level, and the link's address when asked.
-6. A ref maps to the backend node ID. The map lives until the page navigates; a ref whose node is gone gives "That element is gone; take a new snapshot".
-
-Default limits: interactive-only, about 6,000 characters, with `scope` (a ref) to look inside one part and `offset` to page.
+1. `Page.getFrameTree` lists the frames. Frames from sites the agent may not see are left out and named. Each allowed frame's tree comes from `Accessibility.getFullAXTree` and is joined under its iframe element (`DOM.getFrameOwner`).
+2. `DOMSnapshot.captureSnapshot` with opacity, color, font size, clip-path and clip gives what each node looks like, in one call. Opacity multiplies down the tree; being drawn goes up it. Color and font size hide text only (a container with font-size 0 still shows what's in it).
+3. Lines render Playwright style, with states (checked, expanded, disabled, required, focused, selected) and field values. Values of secret fields are masked. A date or time field is one line.
+4. Limits: about 6,000 characters, with `query`, `scope` (a ref) and `offset`.
 
 ## Actions
 
 | Action | How |
 |---|---|
-| click | scroll into view, find its box (`DOM.getContentQuads`), check what's at the center (`DOM.getNodeForLocation`) is the element or inside it, then mouse moved, pressed, released |
-| type | focus, select what's there, `Input.insertText`, optional Enter |
-| select | set the option by its label or value, then fire `input` and `change` |
-| check / uncheck | click only when the state differs |
-| press | key events for named keys and combinations (Control+A, Shift+Tab) |
-| scroll | mouse wheel at the element or the page center |
-| hover | mouse moved |
-| upload (Full) | `DOM.setFileInputFiles`, after the Gate |
-| script (Full) | `Runtime.evaluate`, only when the policy allows it, after the Gate |
+| click | re-read the element's role and name, scroll it into view, find a point on its boxes that reaches it (`DOM.getNodeForLocation`, checked in gohelm's isolated world), then mouse moved, pressed, released |
+| fill | text: focus, select all, `Input.insertText` (newlines become spaces in single-line fields); lists: set the option by label or value and fire `input` and `change`; checkboxes: click only when the state differs; dates and times: set the value with the element's own setter |
+| press | an allowed list of keys; Enter or Space on a submit button counts as a commit |
+| dialogs | `Page.handleJavaScriptDialog`; accepting a confirm counts as a commit |
 
-After each action gohelm waits for the page to settle: the navigation it started, `document.readyState`, and a short quiet period with no DOM changes (capped at 8 seconds). Then it reports the address, the title, any open dialog, and the change list.
+Input that opens a dialog returns as soon as the dialog opens (a click that opens a confirm doesn't hang). Scripts gohelm runs in the page run in its own isolated world, where the page can't see or change them.
+
+**Settling.** After an action, gohelm waits for the navigation it started (up to 10 s), then for 300 ms with no DOM changes, counted by a MutationObserver in gohelm's isolated world (up to 2.5 s). A page that never goes quiet is reported as still loading.
+
+**User activity.** gohelm's world notes the time of real input. If the user used the page since the agent's last step, the next action stops and says so.
 
 ## Safety model
 
-**Sites.** The policy has three lists of origin patterns: `allow` (read and act), `read_only` (read, never act) and `block` (never). Anything else asks the user once through the Gate: allow once, always allow this site, or no. Navigation is checked before it happens: the agent's own, a click's, a redirect's and a frame's (`Fetch` interception of documents in the outside browser; `NavigationStarting` and `FrameNavigationStarting` in the pane). A site the user opens by hand in the pane counts as allowed for reading in that session.
+**Sites.** `allow` (read and act), `read_only` (read and follow links, never type or submit) and `block` (never). Patterns follow Edge's URL policies: `example.mil` covers its subdomains, `.example.mil` the host only. Sites on no list are refused, or asked about once when `AskOutside` is on. Always refused: this computer's own addresses, any scheme but https and http (`javascript:`, `data:`, `file:`, `blob:`, `edge:`, external protocols), addresses with user names, and plain http, private addresses and single-label hosts unless listed.
 
-**Action classes.** Each action gets a class before it runs:
+Checks happen at three levels:
+1. Before the agent navigates.
+2. On every document request (`Fetch` interception), so a click's, a redirect's and a frame's navigation are checked too.
+3. After a navigation lands (`Page.frameNavigated`), which leaves a page that ended up somewhere refused.
 
-- `read`: snapshots, reading, scrolling, waiting, hover.
-- `input`: typing into a field, choosing an option, checking a box.
-- `commit`: anything that sends or changes something outside the page: a click on a submit button, or on a button or link whose name says send, submit, post, pay, buy, order, delete, remove, sign, approve, confirm, transfer, publish, apply or book; Enter in a form field; accepting a confirm dialog; upload; download.
-- `secret`: typing into a password, PIN, one-time code, card number or security code field. Never done by the agent. It hands over to the user instead.
+The pane also checks at WebView2's own `NavigationStarting` and `FrameNavigationStarting`, whoever navigates. A site the user opens by hand counts as allowed for reading in that session.
 
-With the default `confirm: "commit"`, `commit` actions go to the Gate with a plain sentence ("Click "Submit request" on travel.example.mil"). `confirm: "input"` asks for `input` too; `confirm: "never"` asks for none (Full, personal use only).
+**Action classes.**
+- `read`: snapshots, reading, scrolling, waiting.
+- `input`: typing, choosing, checking.
+- `commit`: a submit button, a button or link whose name says send, submit, post, pay, buy, order, delete, remove, sign, approve, confirm, transfer, publish, apply, book, accept or agree; Enter or Space on one; accepting a confirm dialog.
+- `secret`: typing into a password, PIN, one-time code, card or ID number field, found by type, autocomplete, name, id, label and placeholder. Never done.
 
-**The Gate** is the host's: `Decide(ctx, Ask) (Answer, error)`. It can block until the user answers, or return `ErrPending` after showing a card, so a host that stops a turn at a card and runs the call again after the click works too. Each `Ask` carries a stable key, so the retried call finds its answer.
+With the default `confirm: "commit"`, commits wait for the user. `confirm: "input"` asks for input too. `card_sites_confirm` sets the level on sites that asked for the user's certificate.
 
-**Sign-in with a card (CAC).** In the pane, WebView2's `ClientCertificateRequested` asks the Gate whether this site may ask for the user's certificate. If yes, WebView2 shows its own certificate picker and Windows shows its own PIN prompt. gohelm never chooses a certificate, never sees the PIN and never types it. In the desktop driver, the Windows Security, credential and smart card windows are off limits.
+**Sends after actions.** The name list is a first line only. While an action runs and for 1.5 s after it, any request other than GET, HEAD or OPTIONS (form posts, fetch and XHR) is held and asked about, unless the user approved that action as a commit or allowed sends on that site. Beacons sent during an action are dropped without asking. The card names where it goes and what the agent filled in. An approval covers the one action it was given for.
 
-**The Critic** (optional) gets the user's task as the host states it and the proposed action's metadata (class, role, name, site), never page text. It can veto. The host decides which model runs it.
+**The Gate** is the host's `Decide(ctx, Ask) (Answer, error)`. It can block until the user answers, or return `Pending` after showing a card, and the call runs again after the click. Each Ask carries a stable key built from what it's about (site, element, form destination, filled values), so the rerun finds its answer, and one answer is used once. Answers: allow, allow for this site, deny, done (hand-over), pending, cannot ask (scheduled runs, helpers).
 
-**Desktop limits (Full).** The host's own windows are off limits, so the agent can never click its own approval buttons. So are UAC, credential and smart card prompts, and any process on the policy's block list. Mouse and keyboard input are used only when the target window is in front, and stop if the user switches away.
+**Certificates (CAC).** In the pane, WebView2's `ClientCertificateRequested` asks whether the site may ask. Only the page's own site may. If yes, WebView2 shows its own picker and Windows its own PIN prompt, which is the user's own yes.
 
-**Audit.** Every action produces an `AuditEvent` (time, tool, action, class, site, target role and name, decision, outcome). Typed text is never logged, only its length.
+**Desktop limits (Full).**
+- Only programs on `desktop.apps`. The host's own process, and processes it names, are off limits, so the agent can never click its own approval buttons.
+- Windows Security, User Account Control, credential and smart card windows are off limits by process and title.
+- The first use of each program asks the user.
+- Nothing is done while the host says a card is open (`Busy`).
+- Mouse and keyboard only with `raw_input`, only when the program is in front, and typing stops if the user switches windows.
+- Window titles of programs not on the list are never listed.
 
-**Data, not instructions.** Every result that carries page or window content is marked untrusted with its origin, so the host fences it (Quartermaster's `<data>` tags) and its memory rules apply.
+**Audit.** Every action calls the Auditor with an intent event before and a result event after. Typed text is never in an event.
 
-## Tools
+**Data, not instructions.** Every result that carries page or window content is marked `Outside`, so the host fences it as data.
 
-Pane profile (names as the model sees them):
+## Review
 
-`browser_open`, `browser_snapshot`, `browser_read`, `browser_find`, `browser_click`, `browser_type`, `browser_select`, `browser_check`, `browser_press`, `browser_scroll`, `browser_history`, `browser_wait`, `browser_dialog`, `browser_screenshot`, `browser_hand_over`, `browser_close`.
-
-Full adds: `browser_tabs`, `browser_hover`, `browser_upload`, `browser_script`, `desktop_windows`, `desktop_snapshot`, `desktop_click`, `desktop_type`, `desktop_press`, `desktop_scroll`, `desktop_screenshot`.
-
-Each tool is a plain struct (name, label, description, JSON Schema parameters, read-only flag, action class, run function), so a host maps it to its own tool type in a few lines. `integration/quartermaster/` shows that for Quartermaster.
+Fable reviewed the first design. These changes came from that review:
+- Sends are gated by effect, not only by button names.
+- The pane has its own profile with Windows sign-in off, and this computer's addresses always refuse.
+- Keys are an allowed list.
+- Cards show values and destinations, and their keys bind to them.
+- Settling uses an isolated world and short caps.
+- The tool list was cut to 9 for the pane.
+- The WebSocket transport, upload and page scripts were cut.
 
 ## Not in this version
 
-- Cross-site frames in the pane (WebView2's per-frame sessions need a newer interface). They're left out and named.
-- Pop-up windows open in the same pane, so sign-ins that need `window.opener` may not finish in the pane.
-- Vision-only clicking (coordinates from a screenshot) is in the desktop driver, Full only; the browser always acts by ref.
+- Cross-site frames in the pane: WebView2's per-frame sessions need a newer interface, so they're left out and named.
+- Pop-up windows open in the same pane, so sign-ins that need `window.opener` may not finish there.
+- Downloads and uploads.
+- Vision-only clicking at coordinates.
