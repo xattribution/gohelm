@@ -443,7 +443,7 @@ func TestFramesFromOtherSitesAreHidden(t *testing.T) {
 	if !strings.Contains(s, `button "Inner button"`) {
 		t.Fatalf("same-site frame missing:\n%s", s)
 	}
-	if !strings.Contains(s, "Not shown: frames from") {
+	if !strings.Contains(s, "Not shown: frames from") && !strings.Contains(s, "its content isn't shown") {
 		t.Errorf("hidden frame not named:\n%s", s)
 	}
 	o, _ := r.page.Click(r.ctx, r.env(), refOf(t, s, `button "Inner button"`), false)

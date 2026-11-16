@@ -408,6 +408,8 @@ func (r *renderer) walk(n *axNode, depth int, inAction bool) {
 		show = true
 	case contextRoles[role]:
 		show = true
+	case role == "Iframe" || role == "IframePresentational":
+		show = true
 	case r.o.All && !skipRoles[role] && role != "StaticText":
 		show = name != "" || role == "list" || role == "table" || role == "form" || role == "navigation" || role == "main"
 	case r.o.All && role == "StaticText":
@@ -466,6 +468,9 @@ func (r *renderer) line(n *axNode, role, name string, clickable bool) string {
 	}
 	if role != "StaticText" && n.Backend != 0 {
 		b.WriteString(" [ref=" + r.p.assignRef(n, role, name, r.gen) + "]")
+	}
+	if (role == "Iframe" || role == "IframePresentational") && len(n.kids) == 0 {
+		b.WriteString(" (its content isn't shown)")
 	}
 	for _, st := range []struct{ prop, show string }{
 		{"disabled", "disabled"}, {"required", "required"}, {"readonly", "readonly"}, {"focused", "focused"},
