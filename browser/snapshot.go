@@ -427,6 +427,14 @@ func (r *renderer) walk(n *axNode, depth int, inAction bool) {
 	if (interactive || clickable || role == "heading") && role != "listbox" && role != "tablist" && role != "menu" && role != "tree" {
 		inAction = true
 	}
+	// A date or time control is one field to the agent: its inner
+	// spinbuttons and picker button aren't shown.
+	switch role {
+	case "Date", "DateTime", "InputTime", "date", "time":
+		if show {
+			return
+		}
+	}
 	for _, k := range n.kids {
 		r.walk(k, childDepth, inAction)
 	}

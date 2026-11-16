@@ -191,6 +191,9 @@ func TestSnapshotHidesInvisibleTextAndMasksSecrets(t *testing.T) {
 			t.Errorf("snapshot lacks %q:\n%s", want, s)
 		}
 	}
+	if strings.Contains(s, "spinbutton") || strings.Contains(s, "date picker") {
+		t.Errorf("a date field's inner parts are shown:\n%s", s)
+	}
 	if !strings.Contains(s, `textbox "Password"`) || !strings.Contains(s, "the user types this") {
 		t.Errorf("password not marked:\n%s", s)
 	}

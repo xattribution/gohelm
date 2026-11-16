@@ -142,7 +142,8 @@ func paneChecks(ctx context.Context, dir string) {
 	if o.Pending != nil {
 		g.approved[o.Pending.Key] = true
 		o, _ = pg.Click(ctx, env, submit, false)
-		check(!o.Refused && o.Pending == nil && strings.Contains(o.Text, "gohelm check"), "after the OK, the form posts", o.Text)
+		rd, _ := pg.Read(ctx, "", 0)
+		check(!o.Refused && o.Pending == nil && strings.Contains(pg.URL(), "/post") && strings.Contains(rd, "gohelm check"), "after the OK, the form posts", o.Text, rd)
 	}
 
 	pg.Navigate(ctx, env, "https://client.badssl.com/")
