@@ -494,7 +494,7 @@ func TestReadOnlySite(t *testing.T) {
 func TestInjectionHintAndClickable(t *testing.T) {
 	r := newRig(t, defaultRules())
 	r.open("/visible-injection")
-	if s := r.snap(SnapOptions{All: true}); !strings.Contains(s, "address an AI assistant") {
+	if s := r.snap(SnapOptions{All: true}); !strings.Contains(s, "give instructions to an assistant") {
 		t.Errorf("no hint:\n%s", s)
 	}
 	r.open("/clickable")

@@ -35,6 +35,9 @@ type Options struct {
 	// Busy, if set, says the host is showing an approval card: actions
 	// wait until it's answered.
 	Busy func() bool
+	// AgentName names the agent on the user's cards. Default "the
+	// assistant".
+	AgentName string
 }
 
 // Window is a top-level window of an allowed program.

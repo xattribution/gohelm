@@ -230,7 +230,7 @@ func (p *Page) mayAct(ctx context.Context, env policy.Env, class policy.Class) *
 		return nil
 	}
 	ask := policy.Ask{Kind: policy.KindSite, Key: policy.MakeKey(policy.KindSite, "act", v.Origin), Origin: v.Origin, URL: u,
-		Title: "Let the assistant type and click on " + v.Host + "?", Options: []policy.Option{policy.OptAllow, policy.OptAllowSite, policy.OptDeny}}
+		Title: "Let " + p.o.AgentName + " type and click on " + v.Host + "?", Options: []policy.Option{policy.OptAllow, policy.OptAllowSite, policy.OptDeny}}
 	a, err := env.Ask(ctx, ask)
 	return p.answered(ask, a, err, func(site bool) { p.setGrant(v.Origin, policy.GrantAct, site) })
 }
@@ -278,7 +278,7 @@ func (p *Page) Navigate(ctx context.Context, env policy.Env, raw string) (Outcom
 		return Outcome{Text: "Not opened: the user said no to " + v.Host + ".", Summary: "Not opened", Refused: true}, nil
 	case v.Verdict == policy.AskUser && g == policy.NoGrant:
 		ask := policy.Ask{Kind: policy.KindSite, Key: policy.MakeKey(policy.KindSite, v.Origin), Origin: v.Origin, URL: raw,
-			Title: "Let the assistant open " + v.Host + "?", Detail: []string{"Address: " + raw}, Options: []policy.Option{policy.OptAllow, policy.OptAllowSite, policy.OptDeny}}
+			Title: "Let " + p.o.AgentName + " open " + v.Host + "?", Detail: []string{"Address: " + raw}, Options: []policy.Option{policy.OptAllow, policy.OptAllowSite, policy.OptDeny}}
 		ans, err := env.Ask(ctx, ask)
 		if stop := p.answered(ask, ans, err, func(site bool) { p.setGrant(v.Origin, policy.GrantAct, site) }); stop != nil {
 			return *stop, nil

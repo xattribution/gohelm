@@ -31,6 +31,9 @@ type Options struct {
 	// OnUserActivity, if set, is called when the user uses the page
 	// themselves while the agent is working with it.
 	OnUserActivity func()
+	// AgentName names the agent on the user's cards ("Quartermaster").
+	// Default "the assistant".
+	AgentName string
 }
 
 // Page is one page the agent works with.
@@ -104,6 +107,9 @@ func Attach(ctx context.Context, t cdp.Transport, o Options) (*Page, error) {
 	}
 	if o.ReadChars <= 0 {
 		o.ReadChars = 8000
+	}
+	if o.AgentName == "" {
+		o.AgentName = "the assistant"
 	}
 	p := &Page{t: t, o: o, refs: map[string]refTarget{}, byNode: map[int]string{}, worlds: map[string]int{},
 		grants: map[string]policy.Grant{}, cardSites: map[string]bool{}, sendOK: map[string]bool{}, filled: map[string]string{}}
@@ -497,7 +503,7 @@ func (p *Page) onRequest(raw json.RawMessage) {
 				break
 			}
 			ask := policy.Ask{Kind: policy.KindSite, Key: policy.MakeKey(policy.KindSite, v.Origin), Origin: v.Origin, URL: e.Request.URL,
-				Title: "Let the assistant open " + v.Host + "?", Detail: []string{"Address: " + e.Request.URL},
+				Title: "Let " + p.o.AgentName + " open " + v.Host + "?", Detail: []string{"Address: " + e.Request.URL},
 				Options: []policy.Option{policy.OptAllow, policy.OptDeny}}
 			p.addInflight(1)
 			go func() {
@@ -604,7 +610,7 @@ func (p *Page) filledLines() []string {
 		out = append(out[:8], fmt.Sprintf("…and %d more fields", len(out)-8))
 	}
 	if len(out) > 0 {
-		out = append([]string{"Filled in by the assistant on this page:"}, out...)
+		out = append([]string{"Filled in by " + p.o.AgentName + " on this page:"}, out...)
 	}
 	return out
 }

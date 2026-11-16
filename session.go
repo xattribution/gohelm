@@ -83,6 +83,9 @@ type Config struct {
 	// WorkingStatus is shown in the pane's title while a tool runs
 	// (default "The assistant is working").
 	WorkingStatus string
+	// AgentName names the agent on the user's cards ("Quartermaster").
+	// Default "the assistant".
+	AgentName string
 }
 
 // Session holds the browser and desktop state the tools share.
@@ -165,7 +168,7 @@ func (s *Session) page(ctx context.Context, where string) (*browser.Page, error)
 }
 
 func (s *Session) bopts() browser.Options {
-	return browser.Options{Rules: &s.cfg.Rules, Consent: s.cfg.Consent, MaxChars: s.cfg.MaxChars, ReadChars: s.cfg.ReadChars}
+	return browser.Options{Rules: &s.cfg.Rules, Consent: s.cfg.Consent, MaxChars: s.cfg.MaxChars, ReadChars: s.cfg.ReadChars, AgentName: s.cfg.AgentName}
 }
 
 func (s *Session) panePage(ctx context.Context) (*browser.Page, error) {
@@ -374,7 +377,7 @@ func (s *Session) desktop() (*desktop.Driver, error) {
 	if s.desk != nil {
 		return s.desk, nil
 	}
-	d, err := desktop.New(desktop.Options{Rules: &s.cfg.Rules.Desktop, Confirm: &s.cfg.Rules, ExcludePIDs: s.cfg.HostPIDs, MaxChars: s.cfg.MaxChars, Busy: s.cfg.Busy})
+	d, err := desktop.New(desktop.Options{Rules: &s.cfg.Rules.Desktop, Confirm: &s.cfg.Rules, ExcludePIDs: s.cfg.HostPIDs, MaxChars: s.cfg.MaxChars, Busy: s.cfg.Busy, AgentName: s.cfg.AgentName})
 	if err != nil {
 		return nil, err
 	}
