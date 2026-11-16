@@ -49,7 +49,7 @@ The pane's profile is `Local\browser`, beside the app window's own `Local\webvie
 ## What was tested
 
 - **Quartermaster `main`:** the full suite with the patch passes (`go test ./...` in 205 s). So do `go vet` and `GOOS=windows go vet`, each also with `-tags personal`, and `TestPersonal`.
-- **Quartermaster `dev`:** the patch builds. The browser tests, `TestTerms`, `TestNoInlineNames`, `TestEveryToolHasNotes` and `TestPersonal` pass.
+- **Quartermaster `dev`:** the full suite with the patch passes too (209 s).
 - **gohelm on Linux:** all tests pass with headless Chrome, `-race` included.
 - **gohelm on Windows (kdesktop):** all tests pass with Edge started over Windows pipes. `internal/wincheck` passes all 29 checks:
   - the WebView2 pane on public sites;
