@@ -43,8 +43,8 @@ The pane's profile is `Local\browser`, beside the app window's own `Local\webvie
 ## Applying
 
 1. On `dev`, run `git apply -C1 quartermaster.patch`. On `main`, run `git apply quartermaster.patch`.
-2. The module is private, so the build needs access to it. Either make `xattribution/gohelm` public, as goxfa is, or set `GOPRIVATE=github.com/xattribution/gohelm` where Quartermaster builds. Tag `v0.1.0` is the version the patch asks for.
-3. Run `go mod tidy`.
+2. The module is public, so `go mod tidy` fetches `v0.1.0` through the Go proxy like any other module.
+3. Run `go mod tidy` to add its lines to `go.sum`.
 
 ## What was tested
 
